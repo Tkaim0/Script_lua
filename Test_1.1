@@ -1,0 +1,252 @@
+local inicfg = require 'inicfg';
+local filename = 'test.ini';
+
+local ini = inicfg.load({
+	script = {
+		workscript = true
+	},
+    menu = {
+        x = 217,
+        y = 218,
+        w = 516,
+        h = 291
+    }
+	}, filename);
+inicfg.save(ini, filename);
+local workscript = ini.script.workscript
+
+--название скрипта
+local name_raw = "Test" 
+local script_prefix = "[" .. name_raw .. "] "
+
+--информацтя о скрите
+local version_raw = "1.1"
+local author_raw = "Tkaim"
+local info_raw = ""
+local workscript = true
+
+local namescript = "{00FF00}Название скрипта:{FFFFFF} " .. name_raw
+local versionscript = "{00FF00}Версия скрипта:{FFFFFF} " .. version_raw
+local nameauthor    = "{00FF00}Автор:{FFFFFF} " .. author_raw
+local infoscript    = "{00FF00}Информация о скрите:{FFFFFF} " .. info_raw
+
+local imgui = require 'mimgui'
+local encoding = require 'encoding'
+encoding.default = 'CP1251'
+local u8 = encoding.UTF8
+local new = imgui.new
+local imgui = require 'mimgui'
+local encoding = require 'encoding'
+encoding.default = 'CP1251'
+local u8 = encoding.UTF8
+
+local WinState = imgui.new.bool(false)
+local tab = 1
+local tabs = {'Основное','Настройки','Инфа'}
+local confirm_delete = false
+
+-- Сохранение позиции/размера меню
+local function SaveMenuSize(pos, size)
+	ini.menu.x = pos.x
+	ini.menu.y = pos.y
+	ini.menu.w = size.x
+	ini.menu.h = size.y
+	inicfg.save(ini, filename)
+end
+
+-- Обновление
+local UpdateWindow = imgui.new.bool(false)
+local need_update = false
+local updateUrl = ''
+local updateVer = ''
+local updateInfoText = ''
+local message_color = 0x00FF00FF
+
+-- Чтение JSON
+local function readJsonFile(path)
+	local file = io.open(path, "r")
+	if not file then return nil end
+	local content = file:read("*all")
+	file:close()
+	local dkjson = require 'dkjson'
+	local obj, _, err = dkjson.decode(content)
+	if err then print("JSON error: "..err) return nil end
+	return obj
+end
+
+-- Проверка обновления
+local function check_update()
+	sampAddChatMessage(script_prefix.."Начинаю проверку обновлений...", message_color)
+	local path = getWorkingDirectory().."\\Update_Info.json"
+	os.remove(path)
+	local url = 'https://github.com/Tkaim0/Script_lua/raw/main/Update_Info.json' -- raw JSON
+
+	downloadUrlToFile(url, path, function(id, status)
+		if status == 6 then
+			local updateInfo = readJsonFile(path)
+			if updateInfo then
+				local uVer = updateInfo.current_version
+				local uUrl = updateInfo.update_url
+				local uText = updateInfo.update_info
+				if version_raw ~= uVer then
+					sampAddChatMessage(script_prefix.."Доступна новая версия: "..uVer, message_color)
+					need_update = true
+					updateUrl = uUrl
+					updateVer = uVer
+					updateInfoText = uText
+					UpdateWindow[0] = true
+				else
+					sampAddChatMessage(script_prefix.."У вас установлена последняя версия", message_color)
+				end
+			end
+		end
+	end)
+end
+
+-- GUI
+imgui.OnFrame(function() return WinState[0] end, function()
+	imgui.SetNextWindowPos(imgui.ImVec2(ini.menu.x, ini.menu.y), imgui.Cond.FirstUseEver)
+	imgui.SetNextWindowSize(imgui.ImVec2(ini.menu.w, ini.menu.h), imgui.Cond.FirstUseEver)
+	imgui.Begin(u8'Меню', WinState)
+
+	-- Левое меню
+	if imgui.BeginChild('Menu##Left', imgui.ImVec2(120,0), true) then
+		for i, nameTab in ipairs(tabs) do
+			if imgui.Button(u8(nameTab), imgui.ImVec2(100,30)) then
+				tab = i
+			end
+			imgui.Spacing()
+		end
+		imgui.EndChild()
+	end
+
+	imgui.SameLine()
+
+	-- Основной контент
+	if imgui.BeginChild('Content##Right', imgui.ImVec2(0,0), true) then
+		if tab == 1 then
+			imgui.Text(u8'Состояние скрипта: '..(workscript and "Включен" or "Выключен"))
+		elseif tab == 2 then
+			imgui.Text(u8'Настройки')
+			imgui.Spacing()
+
+			if imgui.Button(u8'Выключить скрипт') then
+				workscript = false
+				ini.script.workscript = false
+				inicfg.save(ini, filename)
+				sampSendChat("/cm")
+				WinState[0] = false
+			end
+			imgui.Spacing()
+
+			if imgui.Button(u8'Перезагрузить скрипт') then
+				thisScript():reload()
+			end
+			imgui.Spacing()
+
+			if imgui.Button(u8'Проверить обновления') then
+				check_update()
+			end
+			imgui.Spacing()
+
+			if confirm_delete then
+				imgui.Text(u8'Вы уверены, что хотите удалить скрипт?')
+				if imgui.Button(u8'Да, удалить') then
+					os.remove(getWorkingDirectory().."\\test.lua")
+					os.remove(filename)
+					sampAddChatMessage(script_prefix.."Скрипт удален", message_color)
+					WinState[0] = false
+				end
+				imgui.SameLine()
+				if imgui.Button(u8'Отмена') then
+					confirm_delete = false
+				end
+			else
+				if imgui.Button(u8'Удалить скрипт') then
+					confirm_delete = true
+				end
+			end
+			if workscript then
+				imgui.TextWrapped(u8("Текущая версия скрипта: "..version_raw))
+			end
+			imgui.SameLine()
+		elseif tab == 3 then
+			imgui.Text(u8("Название скрипта: "..name_raw))
+			imgui.Text(u8("Версия: "..version_raw))
+			imgui.Text(u8("Автор: "..author_raw))
+			imgui.TextWrapped(u8("Информация: "..info_raw))
+		end
+		imgui.EndChild()
+	end
+
+	local pos = imgui.GetWindowPos()
+	local size = imgui.GetWindowSize()
+	SaveMenuSize(pos, size)
+	imgui.End()
+end)
+
+imgui.OnFrame(function() return UpdateWindow[0] end, function()
+	imgui.SetNextWindowSize(imgui.ImVec2(400,200), imgui.Cond.FirstUseEver)
+	imgui.Begin("Доступно обновление", UpdateWindow)
+	imgui.Text("Доступна новая версия: "..updateVer)
+	imgui.TextWrapped(updateInfoText)
+
+	if imgui.Button("Скачать и установить") then
+		if updateUrl ~= "" then
+			local path = getWorkingDirectory().."\\test.lua"
+			downloadUrlToFile(updateUrl, path, function(id,status)
+				if status == 6 then
+					sampAddChatMessage(script_prefix.."Скрипт обновлен!", message_color)
+					thisScript():reload()
+				end
+			end)
+			UpdateWindow[0] = false
+		end
+	end
+
+	if imgui.Button("Закрыть") then
+		UpdateWindow[0] = false
+	end
+	imgui.End()
+end)
+
+
+function main()
+    while not isSampAvailable() do wait(0) end
+    sampAddChatMessage('Скрипт загружен', 0xFFFF0000)
+    sampAddChatMessage(script_prefix .. namescript, -1)
+    sampAddChatMessage(script_prefix .. versionscript, -1)
+    sampAddChatMessage(script_prefix .. nameauthor, -1)
+    sampAddChatMessage(script_prefix .. infoscript, -1)
+--команди да команди
+    sampRegisterChatCommand('cm', function()
+        workscript = not workscript
+        ini.script.workscript = workscript   
+        inicfg.save(ini, filename)
+        sampAddChatMessage(workscript and 'Скрипт включен' or 'Скрипт выключен', 0xFFFF0000)
+    end)
+	sampRegisterChatCommand('', function()
+		if not workscript then return end
+		sampSendChat("")
+	end)
+    sampRegisterChatCommand('cmd', function()
+		if not workscript then return end
+        WinState[0] = not WinState[0]
+    end)
+
+    while true do
+        wait(0)
+        if workscript then
+        end
+    end
+end
+
+
+print(namescript)
+if nameauthor == "Автор: Tkaim" then
+    print(nameauthor)
+else
+    print("Зачем сменил автора скрипта? Автор: Tkaim")
+end
+print(versionscript)
+print(infoscript)
